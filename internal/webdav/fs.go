@@ -79,8 +79,8 @@ func (a *aliDriveFS) Mkdir(ctx context.Context, name string, perm os.FileMode) e
 }
 
 func (a *aliDriveFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (webdav.File, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	// a.mu.Lock()
+	// defer a.mu.Unlock()
 
 	if a.rapidUpload && flag&os.O_CREATE == 0 {
 		if cacheFile, ok := RapidCache.Load(name); ok {
