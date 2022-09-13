@@ -6,10 +6,6 @@ import (
 	"crypto/sha1"
 	"errors"
 	"fmt"
-	"github.com/jakeslee/aliyundrive"
-	"github.com/jakeslee/aliyundrive/models"
-	"github.com/sirupsen/logrus"
-	"golang.org/x/net/webdav"
 	"hash"
 	"io"
 	"io/fs"
@@ -19,6 +15,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jakeslee/aliyundrive"
+	"github.com/jakeslee/aliyundrive/models"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/net/webdav"
 )
 
 const (
@@ -169,8 +170,12 @@ func (a *aliDriveFS) OpenFile(ctx context.Context, name string, flag int, perm o
 
 		_file.create.reader = reader
 		_file.create.writer = writer
+		_file.create.done = make(chan struct{})
 
 		go func() {
+			defer func() {
+				close(_file.create.done)
+			}()
 			_, err := a.driver.UploadFile(a.credential, &aliyundrive.UploadFileOptions{
 				Name:         fileName,
 				Size:         size,
@@ -225,6 +230,7 @@ type aliFile struct {
 		reader   io.Reader
 		writer   io.Writer
 		finished bool
+		done     chan struct{}
 	}
 	// 用于秒传
 	enableRapid bool
@@ -237,14 +243,15 @@ type aliFile struct {
 }
 
 func (a *aliFile) Close() error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	// a.mu.Lock()
+	// defer a.mu.Unlock()
 	// 常规上传
 	if !a.create.finished && a.create.writer != nil {
 		err := a.create.writer.(*io.PipeWriter).Close()
 		if err != nil {
 			return err
 		}
+		<-a.create.done
 	}
 
 	// 秒传
@@ -454,7 +461,7 @@ func (a *aliFile) uploadFinished() {
 		_hash := fmt.Sprintf("%x", a.rapid.hash.Sum(nil))
 		defer func(file *os.File) {
 			_ = file.Close()
-			time.AfterFunc(1 * time.Minute, func() {
+			time.AfterFunc(1*time.Minute, func() {
 				a.mu.Lock()
 				defer a.mu.Unlock()
 				logrus.Debugf("remove file's local cache: %s", a.fullPath)
